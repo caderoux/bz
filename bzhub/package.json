@@ -1,0 +1,18 @@
+{
+  "name": "bzhub",
+  "version": "1.0.0",
+  "description": "API:\r GET badges\r     [{ badgeID : {badgeId}, status : {statusName} }]\r POST badges/{badgeId}\r     { status : {statusName} }",
+  "main": "index.js",
+  "scripts": {
+    "test": "test"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "commander": "^6.2.0",
+    "express": "^4.17.1",
+    "joi": "^17.3.0",
+    "node-discover": "^1.2.0",
+    "restify": "^8.5.1"
+  }
+}

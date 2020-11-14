@@ -1,0 +1,16 @@
+{
+  "name": "bzsrv",
+  "version": "1.0.0",
+  "description": "API:\r GET badges\r     [{ badgeID : {badgeId}, status : {statusName} }]\r POST badges\r     { badgeID : {badgeId}, status : {statusName} }",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "commander": "^6.2.0",
+    "express": "^4.17.1",
+    "node-discover": "^1.2.0"
+  }
+}

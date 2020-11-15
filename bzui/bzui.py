@@ -10,6 +10,7 @@ import sys
 from unicornhatmini import UnicornHATMini
 from colorsys import hsv_to_rgb
 import json
+from threading import Thread
 
 parser = argparse.ArgumentParser(description = 'bzui - hardware controller')
 parser.add_argument('--host', dest='host', default='localhost')
@@ -20,12 +21,13 @@ args = parser.parse_args()
 
 serviceUrl = f"http://{args.host}:{args.port}/api/badges"
 
-print("""BusyUI: busyui.py
+print("""BZ UI: bzui.py
 
 bzui:
 A - Busy
 B - Free
-X/Y - Exit
+X - Exit
+Y - Refresh display
 
 Press Ctrl+C to exit!
 
@@ -39,6 +41,33 @@ width, height = unicornhatmini.get_shape()
 splash_origin = (0, 0)
 splash_time = 0
 
+class Splasher:
+    def __init__(self):
+        self._running = True
+
+    def terminate(self):
+        self._running = False
+
+    def run(self):
+        global splash_origin, splash_time
+        while self._running:
+            if splash_time > 0:
+                splash_x, splash_y = splash_origin
+                splash_progress = time.time() - splash_time
+                for x in range(width):
+                    for y in range(height):
+                        d = distance(x, y, splash_x, splash_y)
+                        if (d / 30.0) < splash_progress and splash_progress < 0.6:
+                            h = d / 17.0
+                            r, g, b = [int(c * 255) for c in hsv_to_rgb(h, 1.0, 1.0)]
+                            unicornhatmini.set_pixel(x, y, r, g, b)
+                        elif (d / 30.0) < splash_progress - 0.6:
+                            unicornhatmini.set_pixel(x, y, 0, 0, 0)
+
+            unicornhatmini.show()
+
+            time.sleep(1.0 / 60.0)
+
 def finished():
     button_a.close()
     button_b.close()
@@ -51,6 +80,11 @@ def splash(button):
     button_name, x, y = button_map[button.pin.number]
     splash_origin = (x, y)
     splash_time = time.time()
+    splasher = Splasher()
+    splthr = Thread(target=splasher.run)
+    splthr.start()
+    time.sleep(3)
+    splasher.terminate()
 
 def setstatus(badgeId, statusName):
     data = { 'badgeId' : badgeId, 'statusName' : statusName }
@@ -111,25 +145,26 @@ try:
     button_a.when_pressed = Apressed # Set Busy at local server
     button_b.when_pressed = Bpressed # Set Free at local server
     button_x.when_pressed = Xpressed # Exit
-    button_y.when_pressed = Ypressed # Exit
+    button_y.when_pressed = Ypressed # Show status
 
-    while True:
-        if splash_time > 0:
-            splash_x, splash_y = splash_origin
-            splash_progress = time.time() - splash_time
-            for x in range(width):
-                for y in range(height):
-                    d = distance(x, y, splash_x, splash_y)
-                    if (d / 30.0) < splash_progress and splash_progress < 0.6:
-                        h = d / 17.0
-                        r, g, b = [int(c * 255) for c in hsv_to_rgb(h, 1.0, 1.0)]
-                        unicornhatmini.set_pixel(x, y, r, g, b)
-                    elif (d / 30.0) < splash_progress - 0.6:
-                        unicornhatmini.set_pixel(x, y, 0, 0, 0)
-
-        unicornhatmini.show()
-
-        time.sleep(1.0 / 60.0)
+#    while True:
+#        if splash_time > 0:
+#            splash_x, splash_y = splash_origin
+#            splash_progress = time.time() - splash_time
+#            for x in range(width):
+#                for y in range(height):
+#                    d = distance(x, y, splash_x, splash_y)
+#                    if (d / 30.0) < splash_progress and splash_progress < 0.6:
+#                        h = d / 17.0
+#                        r, g, b = [int(c * 255) for c in hsv_to_rgb(h, 1.0, 1.0)]
+#                        unicornhatmini.set_pixel(x, y, r, g, b)
+#                    elif (d / 30.0) < splash_progress - 0.6:
+#                        unicornhatmini.set_pixel(x, y, 0, 0, 0)
+#
+#        unicornhatmini.show()
+#
+#        time.sleep(1.0 / 60.0)
+    pause()
 
 except KeyboardInterrupt:
     finished()

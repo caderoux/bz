@@ -94,7 +94,6 @@ def setstatus(badgeId, statusName):
 
 def getstatus():
     data = requests.get(url = serviceUrl).json()
-    print(data)
     # Need to process entire status of all badges
     badgeId = data[0]['badgeId']
     statusName = data[0]['statusName']

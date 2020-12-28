@@ -3,11 +3,16 @@
 var IsMaster = false;
 var badges = [];
 
+const os = require("os");
+var hostname = os.hostname();
+const ip = require("ip");
+var ipaddress = ip.address();
+
 const { Command } = require('commander');
 const program = new Command();
 
 program
-    .option('-b, --badgeid <badge id>', 'Badge Identifier', '1')
+    .option('-b, --badgeid <badge id>', 'Badge Identifier', `${ipaddress}(${hostname})`)
     .option('-hh, --hubhost <hub host name>', 'Hub host name', 'localhost')
     .option('-hp, --hubport <port number>', 'Hub server TCP port', 8888)
     .option('-cp, --clusterport <port number>', 'TCP port for cluster', '12345')
@@ -200,7 +205,7 @@ ${JSON.stringify(req.body)}`);
     res.send(badges);
 });
 
-function GetBadge(button) {
+function GetBadge(input) {
     let buttons = {
         'A' : { statusName : 'Busy' }
         , 'B' : { statusName : 'Free' }
@@ -209,8 +214,8 @@ function GetBadge(button) {
     };
 
     return {
-        badgeId : program.badgeid
-        , statusName : buttons[button].statusName
+        badgeId : input.badgeid
+        , statusName : buttons[input.button].statusName
     }
 };
 
@@ -262,11 +267,12 @@ app.post('/api/input', (req, res) => {
     console.log(`[BZ] IN:POST /api/input
 ${JSON.stringify(req.body)}`);
 
-    let badge = GetBadge(req.body.button);
+    let badge = GetBadge(req.body.input);
     ProcessBadgeChange(badge);
 
     res.send(badges);
 });
 
+console.log(`[BZ] Badge ID: ${program.badgeid}`);
 app.listen(program.port, () => console.log(`[BZ] Listening on port ${program.port}...`));
 

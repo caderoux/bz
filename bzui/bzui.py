@@ -41,6 +41,9 @@ width, height = unicornhatmini.get_shape()
 splash_origin = (0, 0)
 splash_time = 0
 
+badgeId = args.badgeId
+statusName = args.statusName
+
 class Splasher:
     def __init__(self):
         self._running = True
@@ -50,6 +53,7 @@ class Splasher:
 
     def run(self):
         global splash_origin, splash_time
+        unicornhatmini.set_brightness(0.5)
         while self._running:
             if splash_time > 0:
                 splash_x, splash_y = splash_origin
@@ -67,6 +71,13 @@ class Splasher:
             unicornhatmini.show()
 
             time.sleep(1.0 / 60.0)
+
+def displayLocal():
+    unicornhatmini.set_brightness(0.5)
+    for x in range(width):
+        for y in range(height):
+            unicornhatmini.set_pixel(x, y, 255 if statusName == 'Busy' else 0, 0 if statusName == 'Busy' else 255, 0)
+    unicornhatmini.show()
 
 def finished():
     button_a.close()
@@ -86,32 +97,35 @@ def splash(button):
     time.sleep(3)
     splasher.terminate()
 
-def setstatus(badgeId, statusName):
-    data = { 'badgeId' : badgeId, 'statusName' : statusName }
-    headers = {'Content-Type' : 'application/json', 'Accept' : 'application/json'}
-    requests.post(url = serviceUrl, json = data, headers = headers)
-    # Refresh display
-
 def getstatus():
+    global badgeId, statusName
     data = requests.get(url = serviceUrl).json()
     # Need to process entire status of all badges
     badgeId = data[0]['badgeId']
     statusName = data[0]['statusName']
     print(f"badgeId {badgeId}, statusName {statusName}")
+    displayLocal()
+    # Refresh display
+
+def setstatus(badgeId, statusName):
+    data = { 'badgeId' : badgeId, 'statusName' : statusName }
+    headers = {'Content-Type' : 'application/json', 'Accept' : 'application/json'}
+    requests.post(url = serviceUrl, json = data, headers = headers)
+    getstatus()
     # Refresh display
 
 def Apressed(button):
     button_name, x, y = button_map[button.pin.number]
     print(f"Button {button_name} pressed!")
     setstatus(args.badgeId, 'Busy')
-    splash(button)
+    # splash(button)
     # Refresh display
 
 def Bpressed(button):
     button_name, x, y = button_map[button.pin.number]
     print(f"Button {button_name} pressed!")
     setstatus(args.badgeId, 'Free')
-    splash(button)
+    # splash(button)
     # Refresh display
 
 def Xpressed(button):

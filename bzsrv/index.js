@@ -13,7 +13,7 @@ const program = new Command();
 
 program
     .option('-b, --badgeid <badge id>', 'Badge Identifier', `${ipaddress}(${hostname})`)
-    .option('-hh, --hubhost <hub host name>', 'Hub host name', 'localhost')
+    .option('-hh, --hubhost <hub host name>', 'Hub host name', null)
     .option('-hp, --hubport <port number>', 'Hub server TCP port', 8888)
     .option('-cp, --clusterport <port number>', 'TCP port for cluster', '12345')
     .option('-p, --port <port number>', 'TCP port for service', '8080')
@@ -56,7 +56,7 @@ const d = Discover(discover_options);
 
 function watchInit(data) {
     if ( IsMaster ) {
-        console.log("[Discover] badge-init received - sending master data out:");
+        console.log(`[Discover] badge-init received - sending master data out: ${{operation : 'response', badges: badges}}`);
         d.send('badge-init', {operation : 'response', badges: badges});
     }
     else {
@@ -84,8 +84,8 @@ d.on("demotion", () => {
 });
 
 var success = d.join("badge-changes", data => {
+    console.log("[Discover] badge-changes received:");
     if ( typeof data !== 'undefined' && data.badges !== undefined ) {
-        console.log("[Discover] badge-changes received:");
         console.log("[Discover] " + JSON.stringify(data.badges));
         data.badges.forEach(badge => {
             setStatus(badge);
@@ -121,13 +121,18 @@ var success = d.join("badge-changes", data => {
             }
         });
     }
+    else {
+        console.log(`[Discover] data:
+${data}
+`);
+    }
 });
 
 setTimeout(() => {
     if ( !IsMaster ) {
         console.log("[Discover] Still not master, joining badge-init:");
         d.join("badge-init", watchInit);
-        console.log("[Discover] Requesting badge-init:");
+        console.log(`[Discover] Requesting badge-init: ${{operation: 'request', badges: []}}`);
         d.send('badge-init', {operation: 'request', badges: []});
     }
 }, 5000);
@@ -149,7 +154,8 @@ function setStatus(badge) {
 
 function ProcessBadgeChange(badge) {
     setStatus(badge);
-    d.send('[Discover] badge-changes', { badges: [badge] });
+    console.log(`[Discover] Broadcast badge-change: ${{ badges: [badge] }}`)
+    d.send('badge-changes', { badges: [badge] });
 
     if (IsMaster && program.hubhost !== null && program.hubport !== null) {
         console.log("[BZ] Sending upstream:");

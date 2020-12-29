@@ -30,7 +30,7 @@ app = Flask(__name__)
 
 @app.route('/display', methods=['POST'])
 def setDisplay():
-    print(f"""IN:POST /display
+    print(f"""[BZout] IN:POST {request.path}
 {request.data}""")
     d.display(request.json['pixels'])
     return 'OK'

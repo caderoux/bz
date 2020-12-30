@@ -63,8 +63,9 @@ if (fs.existsSync(program.badgefile)) {
         }
         else {
             bzhub.badges = JSON.parse(data);
+            console.log(`${JSON.stringify(bzhub.badges)}`);
         }
     });
 }
 
-app.listen(program.port, () => console.log(`[BZhub] Listening on port ${program.port}...`));
+app.listen(program.port, () => console.log(`[BZhub] Listening on port ${program.port}`));

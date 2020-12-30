@@ -1,269 +1,216 @@
 'use strict';
 
-var IsMaster = false;
-var badges = [];
-
 const os = require("os");
-var hostname = os.hostname();
 const ip = require("ip");
-var ipaddress = ip.address();
-
 const { Command } = require('commander');
-const program = new Command();
-
-program
-    .option('-b, --badgeid <badge id>', 'Badge Identifier', `${ipaddress}(${hostname})`)
-    .option('-hh, --hubhost <hub host name>', 'Hub host name', null)
-    .option('-hp, --hubport <port number>', 'Hub server TCP port', 8888)
-    .option('-hm, --hubmethod <method>', 'Hub method', '/api/badges')
-    .option('-cp, --clusterport <port number>', 'TCP port for cluster', '12345')
-    .option('-p, --port <port number>', 'TCP port for service', '8080')
-    .option('-dh, --displayhost <display host name>', 'Display host name', '127.0.0.1')
-    .option('-dd, --displayport <port number>', 'TCP port for display', '8081')
-    .option('-dm, --displaymethod <display method>', 'Display method', '/display')
-;
-
-program.parse(process.argv);
-
-const http = require('http');
-
-function InitializeFromHub() {
-    if ( program.hubhost !== null && program.hubport !== null ) {
-        var hubUrl = `http://${program.hubhost}:${program.hubport}${program.hubmethod}`;
-        console.log("[BZ] Initializing from hub");
-    
-        http.get(hubUrl, res => {
-            let data = "";
-    
-            res.on("data", d => {
-                data += d;
-            });
-            res.on("end", () => {
-                console.log(`[BZ] OUT:GET ${hubUrl}
-${data}`);
-                let badges = JSON.parse(data);
-                badges.forEach(badge => {
-                    setStatus(badge);
-                });
-            });
-        });
-    }
-}
-
 const express = require('express');
-const app = express();
-app.use(express.json());
-
-let discover_options = {port : program.clusterport};
-
 const Discover = require('node-discover');
-const d = Discover(discover_options);
+const Hub = require('./hub.js');
+const Display = require('./display.js');
+const events = require('events');
 
-function watchInit(data) {
-    if ( IsMaster ) {
-        console.log(`[Discover] IN:badge-init (Master)
-${JSON.stringify({operation : 'response', badges: badges})}`);
-        d.send('badge-init', {operation : 'response', badges: badges});
+var bzsrv = {
+    SetupParams : function() {
+        this.params = new Command()
+            .option('-b, --badgeid <badge id>', 'Badge Identifier', `${ip.address()}(${os.hostname()})`)
+            .option('-p, --port <port number>', 'TCP port for service', '8080')
+            .option('-hh, --hubhost <hub host name>', 'Hub host name', null)
+            .option('-hp, --hubport <port number>', 'Hub server TCP port', 8888)
+            .option('-hm, --hubmethod <method>', 'Hub method', '/api/badges')
+            .option('-cp, --clusterport <port number>', 'TCP port for cluster', '12345')
+            .option('-dh, --displayhost <display host name>', 'Display host name', '127.0.0.1')
+            .option('-dd, --displayport <port number>', 'TCP port for display', '8081')
+            .option('-dm, --displaymethod <display method>', 'Display method', '/display')
+            .parse()
+        ;
+        console.log(`[BZ] Badge ID: ${this.params.badgeid}`);
+
+        return(this);
     }
-    else {
-        if ( typeof data !== 'undefined' && data.badges !== undefined ) {
-            console.log(`[Discover] IN:badge-init
-${JSON.stringify(data.badges)}`);
-            data.badges.forEach(badge => {
-                setStatus(badge);
-            });
-        }
-        d.leave('badge-init');
+    , SetupHub : function() {
+        this.hub = new Hub(this.params.hubhost, this.params.hubport, this.params.hubmethod)
+            .Initialize(this.UpdateBadgeStatus.bind(this))
+        ;
+
+        return(this);
     }
-}
+    , SetupWebServer : function() {
+        this.app = express();
+        this.app.use(express.json());
 
-d.on("promotion", () => {
-    IsMaster = true;
-	console.log("[Discover] Promoted to master");
-    badges.forEach(badge => {
-        NotifyHub(badge);
-    });
-    var success = d.join("badge-init", watchInit);
-});
-
-d.on("demotion", () => {
-    IsMaster = false;
-    console.log("[Discover] Demoted from master");
-    d.leave('badge-init');
-});
-
-function NotifyHub(badge) {
-    if ( IsMaster && program.hubhost !== null && program.hubport !== null ) {
-        var hubUrl = `http://${program.hubhost}:${program.hubport}${program.hubmethod}`;
-        let body = JSON.stringify(badge);
-        console.log(`[BZ] OUT:POST ${hubUrl}
-${body}`);
-
-        let options = {
-            hostname: program.hubhost,
-            port: program.hubport,
-            path: program.hubmethod,
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-                "Content-Length": Buffer.byteLength(body)
-            }
-        };
-        
-        http
-            .request(options, res => {
-                let data = "";
-                res.on("data", d => {
-                    data += d;
-                })
-                res.on("end", () => {
-                    console.log(`[BZ] OUT:POST RESPONSE ${data}`);
-                })
-            })
-            .on("error", console.error)
-            .end(body);
-    }
-}
-
-var success = d.join("badge-changes", data => {
-    if ( typeof data !== 'undefined' && data.badges !== undefined ) {
-        console.log(`[Discover] IN:badge-changes
-${JSON.stringify(data.badges)}`);
-        data.badges.forEach(badge => {
-            setStatus(badge);
-            NotifyHub(badge);
+        this.app.get('/', (req, res) => {
+            console.log(`[BZ] IN:GET ${req.url}`);
+            res.set('Content-Type', 'text/html');
+            res.send('<h1>This is bzsrv</h1><p>' + JSON.stringify(this.state.badges) + '</p>');
         });
-    }
-    else {
-        console.log(`[Discover] IN:badge-changes
-${data}
-`);
-    }
-});
+            
+        this.app.get('/api/badges', (req, res) => {
+            console.log(`[BZ] IN:GET ${req.url}`);
+            res.send(this.state.badges);
+        });
+        
+        this.app.post('/api/badges', (req, res) => {
+            console.log(`[BZ] IN:POST ${req.url}\n${JSON.stringify(req.body)}`);
+        
+            this.ProcessBadgeChange(req.body);
+        
+            res.send(this.state.badges);
+        });
+        
+        this.app.post('/api/input', (req, res) => {
+            function GetBadge(input) {
+                let buttons = {
+                    'A' : { statusName : 'Busy' }
+                    , 'B' : { statusName : 'Free' }
+                    , 'X' : { statusName : 'Off' }
+                    , 'Y' : { statusName : 'Custom' }
+                };
+            
+                return {
+                    badgeId : input.badgeid
+                    , statusName : buttons[input.button].statusName
+                }
+            };
+            
+            console.log(`[BZ] IN:POST ${req.url}\n${JSON.stringify(req.body)}`);
+        
+            this.ProcessBadgeChange(GetBadge(req.body.input));
+        
+            res.send(this.state.badges);
+        });
 
-setTimeout(() => {
-    if ( !IsMaster ) {
-        d.join("badge-init", watchInit);
-        console.log(`[Discover] OUT:badge-init
-${JSON.stringify({operation: 'request', badges: []})}`);
-        d.send('badge-init', {operation: 'request', badges: []});
+        return(this);
     }
-}, 5000);
+    , SetupDisplay : function() {
+        this.display = new Display(17, 7, this.params.displayhost, this.params.displayport, this.params.displaymethod);
 
-function UpdateDisplay() {
-    let display = {};
-    let badge = badges.find((o) => { return (o.badgeId == program.badgeid) ; });
-    if (badge) {
-        if ( badge.statusName == 'Busy' ) {
-            display.pixels = [ [255, 0, 0] ];
+        return(this);
+    }
+    , SetupDiscovery : function() {
+        this.discover = Discover({port : this.params.clusterport});
+        
+        this.discover.on("promotion", () => {
+            this.state.IsMaster = true;
+            console.log("[Discover] Promoted to master");
+            if ( this.state.IsMaster ) { this.hub.Notify(this.state.badges) ; }
+            var success = this.discover.join("badge-init", this.watchInit.bind(this));
+        });
+        
+        this.discover.on("demotion", () => {
+            this.state.IsMaster = false;
+            console.log("[Discover] Demoted from master");
+            this.discover.leave('badge-init');
+        });
+        
+        var success = this.discover.join("badge-changes", data => {
+            if ( typeof data !== 'undefined' && data.badges !== undefined ) {
+                console.log(`[Discover] IN:badge-changes\n${JSON.stringify(data.badges)}`);
+                this.UpdateBadgeStatus(data.badges);
+                if ( this.state.IsMaster ) { this.hub.Notify(data.badges) ; }
+            }
+            else {
+                console.log(`[Discover] IN:badge-changes\n${data}`);
+            }
+        });
+
+        setTimeout(() => {
+            if ( !this.state.IsMaster ) {
+                this.discover.join("badge-init", this.watchInit.bind(this));
+                console.log(`[Discover] OUT:badge-init\n${JSON.stringify({operation: 'request', badges: []})}`);
+                this.discover.send('badge-init', {operation: 'request', badges: []});
+            }
+        }, 5000);
+
+        return(this);
+    }
+    , state: {
+        IsMaster: false
+        , badges: []
+    }
+    , constants: {
+        BadgeColor: {
+            "Off" : [0, 0, 0]
+            , "Busy" : [255, 0, 0]
+            , "Free" : [0, 255, 0]
+            , "Red" : [255, 0, 0]
+            , "Green" : [0, 255, 0]
+            , "Blue" : [0, 0, 255]
         }
-        else if ( badge.statusName == 'Free' ) {
-            display.pixels = [ [0, 255, 0] ];
+    }
+    , currentbadge : function() {
+        return(this.state.badges.find((o) => { return (o.badgeId == this.params.badgeid) ; }));
+    }
+    , UpdateDisplay : function() {
+        let badge = this.currentbadge();
+        if (badge) {
+            if (this.constants.BadgeColor[badge.statusName]) {
+                this.display.SetAll(this.constants.BadgeColor[badge.statusName]);
+            }
+            else {
+                this.display.RepeatPattern([ [255, 0, 0], [0, 255, 0], [0, 0, 255] ]);
+            }
+    
+            let tl = [this.display.width - 1, 0];
+            this.state.badges.forEach(badge => {
+                if ( badge.badgeId != this.params.badgeid && this.constants.BadgeColor[badge.statusName] ) {
+                    let br = [tl[0] + 1, tl[1] + this.display.height];
+                    this.display.FillRectangle(tl, br, this.constants.BadgeColor[badge.statusName]);
+                    tl[0]--;
+                }
+            });
+    
+            this.display.Refresh();
         }
-        else if ( badge.statusName == 'Off' ) {
-            display.pixels = [ [0, 0, 0] ];
+    }
+    , UpdateBadgeStatus : function(badges) {
+        if ( !Array.isArray(badges) ) {
+            badges = [badges];
+        }
+        badges.forEach(badge => {
+            let obj = this.state.badges.find((o, i, a) => {
+                if (o.badgeId === badge.badgeId) {
+                    this.state.badges[i] = badge;
+                    return true;
+                }
+            });
+            if ( obj === undefined ) {
+                this.state.badges.push(badge);
+            }
+        });
+        this.UpdateDisplay();
+    }
+    , watchInit : function(data) {
+        if ( this.state.IsMaster ) {
+            console.log(`[Discover] IN:badge-init (Master)\n${JSON.stringify({operation : 'response', badges: this.state.badges})}`);
+            this.discover.send('badge-init', {operation : 'response', badges: this.state.badges});
         }
         else {
-            display.pixels = [ [255, 0, 0], [0, 255, 0], [0, 0, 255] ];
-        }
-    
-        let body = JSON.stringify(display);
-        let displayUrl = `${program.displayhost}:${program.displayport}${program.displaymethod}`;
-        let options = {
-            hostname: program.displayhost,
-            port: program.displayport,
-            path: program.displaymethod,
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-                "Content-Length": Buffer.byteLength(body)
+            if ( typeof data !== 'undefined' && data.badges !== undefined ) {
+                console.log(`[Discover] IN:badge-init\n${JSON.stringify(data.badges)}`);
+                this.UpdateBadgeStatus(data.badges);
             }
-        };
-    
-        console.log(`[BZ] OUT:POST ${displayUrl}
-${body}`);
-    
-        http
-            .request(options, res => {
-                let data = "";
-                res.on("data", d => {
-                    data += d;
-                })
-                res.on("end", () => {
-                    console.log(`[BZ] OUT:POST RESPONSE ${data}`);
-                })
-            })
-            .on("error", console.error)
-            .end(body);
-    }
-}
-
-function setStatus(badge) {
-    let obj = badges.find((o, i, a) => {
-        if (o.badgeId === badge.badgeId) {
-            badges[i] = badge;
-            return true;
+            this.discover.leave('badge-init');
         }
-    });
-    if ( obj === undefined ) {
-        badges.push(badge);
     }
-    UpdateDisplay();
-}
-
-function ProcessBadgeChange(badge) {
-    setStatus(badge);
-    console.log(`[Discover] OUT:badge-change
-${JSON.stringify({ badges: [badge] })}`)
-    d.send('badge-changes', { badges: [badge] });
-    NotifyHub(badge);
-}
-
-app.get('/', (req, res) => {
-    console.log(`[BZ] IN:GET ${req.url}`);
-    res.set('Content-Type', 'text/html');
-    res.send('<h1>This is bzsrv</h1><p>' + JSON.stringify(badges) + '</p>');
-});
-     
-app.get('/api/badges', (req, res) => {
-    console.log(`[BZ] IN:GET ${req.url}`);
-    res.send(badges);
-});
-
-app.post('/api/badges', (req, res) => {
-    console.log(`[BZ] IN:POST ${req.url}
-${JSON.stringify(req.body)}`);
-
-    let badge = req.body;
-    ProcessBadgeChange(badge);
-
-    res.send(badges);
-});
-
-app.post('/api/input', (req, res) => {
-    function GetBadge(input) {
-        let buttons = {
-            'A' : { statusName : 'Busy' }
-            , 'B' : { statusName : 'Free' }
-            , 'X' : { statusName : 'Off' }
-            , 'Y' : { statusName : 'Custom' }
-        };
-    
-        return {
-            badgeId : input.badgeid
-            , statusName : buttons[input.button].statusName
+    , ProcessBadgeChange : function(badges) {
+        if ( !Array.isArray(badges) ) {
+            badges = [badges];
         }
-    };
-    
-    console.log(`[BZ] IN:POST ${req.url}
-${JSON.stringify(req.body)}`);
+        this.UpdateBadgeStatus(badges);
+        console.log(`[Discover] OUT:badge-change\n${JSON.stringify({ badges: badges })}`)
+        this.discover.send('badge-changes', { badges: badges });
+        if ( this.state.IsMaster ) { this.hub.Notify(badges) ; }
+    }
+    , Listen : function() {
+        this.app.listen(this.params.port, () => console.log(`[BZ] Listening on port ${this.params.port}`));
+    }
+};
 
-    let badge = GetBadge(req.body.input);
-    ProcessBadgeChange(badge);
-
-    res.send(badges);
-});
-
-console.log(`[BZ] Badge ID: ${program.badgeid}`);
-InitializeFromHub();
-app.listen(program.port, () => console.log(`[BZ] Listening on port ${program.port}`));
+bzsrv
+    .SetupParams()
+    .SetupWebServer()
+    .SetupDisplay()
+    .SetupDiscovery()
+    .SetupHub()
+    .Listen()
+;

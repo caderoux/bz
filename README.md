@@ -38,11 +38,26 @@ bzsrv has a simple web page and two main web service APIs:
 
 `GET`: returns all the badges states
 
-`POST`: applies all the badges states received
+`POST`: applies all the badges states received, expects an array of badges of the form:
+
+    [
+        { badgeId : "<badge identifier>", statusName : "<badge status>" }
+        , ...
+    ]
 
 `/api/input`
 
 `POST`: takes an input object (like a control board with buttons) and event data - it then converts this to a badge state change in some fashion, like making button "A" from a UnicornHatMini set the badge status to "Busy"
+
+Takes an input of the form:
+
+    {
+        input : {
+                badgeid : "<badge identifier>"
+                , device : "<device identifier>"
+                , button : "<button identifier>"
+        }
+    }
 
 The `/api/input` method is the point of expansion for any inputs that might need mapping or interpretation by bzsrv - for instance converting a given button or slider on a device to a state change.  Where the nature of a badge state change is already known, POST to `/api/badges` can be used - for instance from a calendaring connector.
 
@@ -80,6 +95,22 @@ bzout has a single web service API:
     { pixels : [ [r, g, b], ..., [r, g, b] ] }
 
 where `0 <= r, g, b <= 255`
+
+## bzcli
+
+Command-line examples to manipulate and retrieve the busy status of the local badge from the local bzsrv service
+
+    get-busystatus.js
+
+    set-busystatus.js
+
+## bzcmd
+
+Powershell command-line examples
+
+    Get-BzStatus.ps1
+
+    Set-BzStatus.ps1
 # Roadmap
 
 Multiple external displays - i.e. multiple access doors or a light at desk facing the user and one outside the door

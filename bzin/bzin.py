@@ -31,36 +31,38 @@ class bzin:
         parser.add_argument('--method', dest = 'method', default = '/api/input')
         return parser.parse_args()
 
-    class bzbutton:
-        def button_pressed(self, button):
-            json = {'input' : {
-                                'badgeid' : self.parent.args.badgeid
-                                , 'device' : self.parent.args.device
-                                , 'button' : self.name
-                                }
+    def on_button(self, button):
+        json = {
+                    'input' : {
+                            'badgeid' : self.args.badgeid
+                            , 'device' : self.args.device
+                            , 'button' : button.name
                     }
-            print(f"[BZin] Button {self.name} pressed")
-            print(f"[BZin] OUT:POST {self.parent.serviceUrl}\n{json}")
-            r = requests.post(url = self.parent.serviceUrl, json = json)
-            print(f"[BZin] OUT:POST RESPONSE {r.status_code} {r.reason}")
+                }
+        print(f"[BZin] Button {button.name} pressed")
+        print(f"[BZin] OUT:POST {self.serviceUrl}\n{json}")
+        r = requests.post(url = self.serviceUrl, json = json)
+        print(f"[BZin] OUT:POST RESPONSE {r.status_code} {r.reason}")
 
-        def __init__(self, parent, pin, name):
-            self.parent = parent
+    # Inherit from Button to send a button object which includes our name for the button instead of just the pin numebr in the event
+    class bzButton(Button):
+        def bz_pressed(self, button):
+            self.on_button(self)
+
+        def __init__(self, pin, name, on_button):
             self.name = name
-            self.button = Button(pin)
-            self.button.when_pressed = self.button_pressed.__get__(self, self.__class__)
-
-        def close(self):
-            self.button.close()
+            self.on_button = on_button
+            Button.__init__(self, pin)
+            self.when_pressed = self.bz_pressed
 
     def __init__(self):
         self.args = bzin.SetupParams()
         self.serviceUrl = f"http://{self.args.server}:{self.args.port}{self.args.method}"
         self.buttons = [
-            self.bzbutton(self, 5, "A")
-            , self.bzbutton(self, 6, "B")
-            , self.bzbutton(self, 16, "X")
-            , self.bzbutton(self, 24, "Y")
+            self.bzButton(5, "A", self.on_button)
+            , self.bzButton(6, "B", self.on_button)
+            , self.bzButton(16, "X", self.on_button)
+            , self.bzButton(24, "Y", self.on_button)
         ]
         print(f"""bzin.py: POSTing button messages to {self.serviceUrl}""")
 
